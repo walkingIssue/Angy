@@ -5,7 +5,7 @@ Dev-only SvelteKit translation helper for in-app PO workflow.
 ## Install
 
 ```bash
-npm install angy
+npm install @walkinissue/angy
 ```
 
 ## What it is
@@ -70,7 +70,7 @@ Use the plugin for shared config, then mount the component and define the route 
 // vite.config.ts
 import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
-import { angy } from "angy/plugin";
+import { angy } from "@walkingissue/angy/plugin";
 
 export default defineConfig({
 	plugins: [angy(), sveltekit()]
@@ -79,7 +79,7 @@ export default defineConfig({
 
 ```ts
 // angy.config.ts
-import { defineAngyConfig } from "angy/server";
+import { defineAngyConfig } from "@walkingissue/angy/server";
 
 export default defineAngyConfig({
 	basePoPath: "./src/locales/en.po",
@@ -96,7 +96,7 @@ export default defineAngyConfig({
 <!-- src/routes/+layout.svelte -->
 <script lang="ts">
 	import { dev } from "$app/environment";
-	import { Angy } from "angy";
+	import { Angy } from "@walkingissue/angy";
 </script>
 
 {#if dev}
@@ -108,7 +108,7 @@ export default defineAngyConfig({
 
 ```ts
 // src/routes/api/translations/+server.ts
-export { handler as POST } from "angy/server";
+export { handler as POST } from "@walkingissue/angy/server";
 ```
 
 ## Catalog model
@@ -204,7 +204,7 @@ Return:
 Example:
 
 ```ts
-import { defineAngyConfig, type SuggestionProvider } from "angy/server";
+import { defineAngyConfig, type SuggestionProvider } from "@walkingissue/angy/server";
 
 const suggestionProvider: SuggestionProvider = async ({ items }) => {
 	return items.map((item) => ({
@@ -227,9 +227,9 @@ export default defineAngyConfig({
 
 ## Exports
 
-- `Angy` from `angy`
-- `handler` and `defineAngyConfig` from `angy/server`
-- `angy` from `angy/plugin`
+- `Angy` from `@walkingissue/angy`
+- `handler` and `defineAngyConfig` from `@walkingissue/angy/server`
+- `angy` from `@walkingissue/angy/plugin`
 
 ## Notes
 
