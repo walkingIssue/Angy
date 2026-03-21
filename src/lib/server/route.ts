@@ -1,5 +1,11 @@
 import { json, type RequestHandler } from "@sveltejs/kit";
-import { handleCommit, handleCommitBatch, handleRotateCatalogs } from "./commit.ts";
+import {
+	handleCommit,
+	handleCommitBatch,
+	handlePromoteWorkingPreview,
+	handleRotateCatalogs,
+	handleRotatePreflight
+} from "./commit.ts";
 import {
 	configureTranslationHelper,
 	loadAngyConfigFromRoot,
@@ -52,7 +58,15 @@ export async function handleTranslationRequest(
 	}
 
 	if (intent === "rotate-catalogs") {
-		return handleRotateCatalogs();
+		return handleRotateCatalogs(request);
+	}
+
+	if (intent === "rotate-preflight") {
+		return handleRotatePreflight();
+	}
+
+	if (intent === "promote-working-preview") {
+		return handlePromoteWorkingPreview();
 	}
 
 	return handleCommit(request);
@@ -74,3 +88,11 @@ export {
 	type SuggestionRequestItem,
 	type SuggestionResponseItem
 } from "./config.ts";
+export {
+	CatalogIntegrityError,
+	collectCatalogIntegrityIssues,
+	collectRotationImpact,
+	getRotationPreflight,
+	readCatalogPair,
+	resolveTranslationState
+} from "./catalog.ts";

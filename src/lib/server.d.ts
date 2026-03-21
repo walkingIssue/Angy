@@ -57,7 +57,7 @@ export type SuggestionProviderInput = {
 	targetLocale: string;
 	systemMessage: string;
 	model: string;
-	apiKey: string;
+	apiKey: string | undefined;
 };
 
 export type SuggestionProvider = (
@@ -70,7 +70,7 @@ export type AngyConfigInput = {
 	sourceLocale: string;
 	targetLocale: string;
 	routePath?: string;
-	apiKey: string;
+	apiKey?: string;
 	systemMessage?: string;
 	suggestionModel?: string;
 	watchIgnore?: string[];

@@ -21,12 +21,15 @@
 		translatedValue = $bindable(),
 		stagedTranslations,
 		hasActiveSuggestion,
+		hasDraft,
 		pending,
+		previewOnly,
 		error,
 		success,
 		onClose,
 		onSubmit,
 		onStage,
+		onInputValue,
 		onAltFocusChange,
 		onAltKeydown,
 		onSelectAlt,
@@ -44,12 +47,15 @@
 		translatedValue: string;
 		stagedTranslations: Record<string, DraftTranslation>;
 		hasActiveSuggestion: boolean;
+		hasDraft: boolean;
 		pending: boolean;
+		previewOnly: boolean;
 		error: string | null;
 		success: string | null;
 		onClose: () => void;
 		onSubmit: (event: SubmitEvent) => void;
 		onStage: (event?: Event) => void;
+		onInputValue: () => void;
 		onAltFocusChange: (key: string | null) => void;
 		onAltKeydown: (event: KeyboardEvent, msgid: string, msgctxt: string | null) => void;
 		onSelectAlt: (event: Event, msgid: string, msgctxt: string | null) => void;
@@ -154,6 +160,13 @@
 					<span>{contextResult.match.score.toFixed(3)}</span>
 				</div>
 
+				{#if contextResult.catalogState?.status === "out_of_sync"}
+					<div class="catalog-warning">
+						<span class="context-label">Warning</span>
+						<div>Catalogs are out of sync. Rotation can overwrite working-only translations.</div>
+					</div>
+				{/if}
+
 				{#if contextResult.entry.flags.length}
 					<div class="context-row">
 						<span class="context-label">Flags</span>
@@ -214,27 +227,36 @@
 	<label class="field">
 		<span class="field-label">Selected text</span>
 		<div class="selected-copy">{capturedSelection}</div>
-		<textarea
-			bind:this={translationInputElement}
-			name="translationValue"
-			class="translation-input"
-			class:suggested={hasActiveSuggestion}
-			rows="4"
-			bind:value={translatedValue}
-			placeholder={capturedSelection}
-			onkeydown={(event) => {
-				if (event.key === "Enter" && !event.shiftKey) {
-					event.preventDefault();
-					onStage(event);
-					return;
-				}
+		{#if previewOnly}
+			<div class="preview-note">
+				Working locale preview mode is active. Rotate back to a non-working locale to stage or
+				commit translations.
+			</div>
+		{:else}
+			<textarea
+				bind:this={translationInputElement}
+				name="translationValue"
+				class="translation-input"
+				class:suggested={hasActiveSuggestion}
+				class:draft={hasDraft}
+				rows="4"
+				bind:value={translatedValue}
+				placeholder={capturedSelection}
+				oninput={onInputValue}
+				onkeydown={(event) => {
+					if (event.key === "Enter" && !event.shiftKey) {
+						event.preventDefault();
+						onStage(event);
+						return;
+					}
 
-				if (event.key === "Tab") {
-					event.preventDefault();
-					moveSelection(event.shiftKey ? -1 : 1);
-				}
-			}}
-		></textarea>
+					if (event.key === "Tab") {
+						event.preventDefault();
+						moveSelection(event.shiftKey ? -1 : 1);
+					}
+				}}
+			></textarea>
+		{/if}
 	</label>
 
 	<div class="meta-row">
@@ -248,27 +270,29 @@
 			<p>Failed: {error}</p>
 		{/if}
 
-		<button
-			type="button"
-			class="tool-btn"
-			disabled={!translatedValue.trim() || !commitTarget}
-			onclick={(event) => {
-				event.preventDefault();
-				event.stopPropagation();
-				onStage(event);
-			}}
-		>
-			Stage
-		</button>
+		{#if !previewOnly}
+			<button
+				type="button"
+				class="tool-btn"
+				disabled={!translatedValue.trim() || !commitTarget}
+				onclick={(event) => {
+					event.preventDefault();
+					event.stopPropagation();
+					onStage(event);
+				}}
+			>
+				Stage
+			</button>
 
-		<button
-			type="submit"
-			class="tool-btn primary"
-			disabled={!hasDirtyTranslations || pending}
-			aria-disabled={!hasDirtyTranslations || pending}
-		>
-			{pending ? "Committing..." : "Commit all"}
-		</button>
+			<button
+				type="submit"
+				class="tool-btn primary"
+				disabled={!hasDirtyTranslations || pending}
+				aria-disabled={!hasDirtyTranslations || pending}
+			>
+				{pending ? "Committing..." : "Commit all"}
+			</button>
+		{/if}
 	</div>
 </form>
 
@@ -460,6 +484,32 @@
 		background: rgba(255, 214, 102, 0.16);
 		border-color: rgba(255, 214, 102, 0.48);
 		box-shadow: 0 0 0 4px rgba(255, 214, 102, 0.12);
+	}
+
+	.translation-input.draft {
+		background: rgba(255, 120, 120, 0.12);
+		border-color: rgba(255, 130, 130, 0.38);
+		box-shadow: 0 0 0 1px rgba(255, 130, 130, 0.16);
+	}
+
+	.preview-note {
+		padding: 0.8rem 0.9rem;
+		border-radius: 0.8rem;
+		background: rgba(255, 196, 120, 0.08);
+		border: 1px solid rgba(255, 196, 120, 0.24);
+		color: rgba(255, 242, 220, 0.96);
+		font-size: 0.85rem;
+		line-height: 1.45;
+	}
+
+	.catalog-warning {
+		padding: 0.75rem 0.8rem;
+		border-radius: 0.8rem;
+		background: rgba(255, 188, 88, 0.1);
+		border: 1px solid rgba(255, 188, 88, 0.26);
+		color: rgba(255, 243, 220, 0.96);
+		font-size: 0.82rem;
+		line-height: 1.45;
 	}
 
 	.meta-row {

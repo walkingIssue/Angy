@@ -1,6 +1,11 @@
 import { json } from "@sveltejs/kit";
+import { basename } from "node:path";
 import {
+	CatalogIntegrityError,
+	getRotationPreflight,
 	ensureWorkingCatalog,
+	promoteWorkingDraftToRuntime,
+	readCatalogPair,
 	readParsedCatalog,
 	removeFuzzyFlag,
 	rotateCatalogs,
@@ -8,6 +13,7 @@ import {
 	writeWorkingCatalog
 } from "./catalog.ts";
 import type { CommitBatchItem, PoTranslationEntry } from "./types.ts";
+import { getTranslationHelperConfig, inferLocaleFromCatalogPath } from "./config.ts";
 
 function runtimeKey(msgid: string, msgctxt: string | null) {
 	return `${msgctxt ?? ""}::${msgid}`;
@@ -20,10 +26,9 @@ export async function writeTranslationToWorkingCatalog(
 ) {
 	await ensureWorkingCatalog();
 
-	const [baseParsed, workingParsed] = await Promise.all([
-		readParsedCatalog("base"),
-		readParsedCatalog("working")
-	]);
+	await readCatalogPair({ ensureWorking: true });
+
+	const [baseParsed, workingParsed] = await Promise.all([readParsedCatalog("base"), readParsedCatalog("working")]);
 
 	if (!baseParsed || !workingParsed) {
 		return { ok: false as const, error: "Unable to load catalogs" };
@@ -55,11 +60,13 @@ export async function writeTranslationToWorkingCatalog(
 
 	runtimeTranslations.set(runtimeKey(resolvedMsgid, resolvedMsgctxt), translationValue);
 
+	const workingCatalogName = inferLocaleFromCatalogPath(getTranslationHelperConfig().workingPoPath) ?? "working";
+
 	return {
 		ok: true as const,
 		msgid: resolvedMsgid,
 		msgctxt: resolvedMsgctxt,
-		workingCatalog: "en-working.po"
+		workingCatalog: workingCatalogName
 	};
 }
 
@@ -97,6 +104,24 @@ export async function handleCommitBatch(request: Request) {
 			},
 			{ status: 400 }
 		);
+	}
+
+	try {
+		await readCatalogPair({ ensureWorking: true });
+	} catch (error) {
+		if (error instanceof CatalogIntegrityError) {
+			return json(
+				{
+					success: false,
+					error: error.message,
+					code: "catalog_integrity_error",
+					issues: error.issues
+				},
+				{ status: 409 }
+			);
+		}
+
+		throw error;
 	}
 
 	const results: Array<{ msgid: string; msgctxt: string | null; ok: boolean; error?: string }> = [];
@@ -156,7 +181,7 @@ export async function handleCommitBatch(request: Request) {
 
 	return json({
 		success: true,
-		message: `Committed ${results.length} translations to en-working.po`,
+		message: `Committed ${results.length} translations to Angy draft working catalog`,
 		results
 	});
 }
@@ -199,23 +224,94 @@ export async function handleCommit(request: Request) {
 
 	return json({
 		success: true,
-		message: "Translation written to en-working.po",
+		message: "Translation written to Angy draft working catalog",
 		msgid: result.msgid,
 		msgctxt: result.msgctxt,
 		workingCatalog: result.workingCatalog
 	});
 }
 
-export async function handleRotateCatalogs() {
-	const result = await rotateCatalogs();
+export async function handlePromoteWorkingPreview() {
+	try {
+		await readCatalogPair({ ensureWorking: true });
+		await promoteWorkingDraftToRuntime();
+
+		return json({
+			success: true,
+			message: `Promoted Angy draft into ${basename(getTranslationHelperConfig().workingPoPath)}`
+		});
+	} catch (error) {
+		if (error instanceof CatalogIntegrityError) {
+			return json(
+				{
+					success: false,
+					error: error.message,
+					code: "catalog_integrity_error",
+					issues: error.issues
+				},
+				{ status: 409 }
+			);
+		}
+
+		throw error;
+	}
+}
+
+export async function handleRotatePreflight() {
+	try {
+		const preflight = await getRotationPreflight();
+		return json({
+			success: true,
+			safe: preflight.safe,
+			status: preflight.status,
+			affected: preflight.affected
+		});
+	} catch (error) {
+		if (error instanceof CatalogIntegrityError) {
+			return json(
+				{
+					success: false,
+					error: error.message,
+					code: "catalog_integrity_error",
+					issues: error.issues
+				},
+				{ status: 409 }
+			);
+		}
+
+		throw error;
+	}
+}
+
+export async function handleRotateCatalogs(request: Request) {
+	const data = await request.json().catch(() => null);
+	const confirmDestructive = data?.confirmDestructive === true;
+	const preflight = await getRotationPreflight();
+
+	if (!preflight.safe && !confirmDestructive) {
+		return json(
+			{
+				success: false,
+				error: "Catalog rotation would overwrite working-only translations. Confirm rotation explicitly to continue.",
+				code: "rotation_confirmation_required",
+				status: preflight.status,
+				affected: preflight.affected
+			},
+			{ status: 409 }
+		);
+	}
+
+	const result = await rotateCatalogs({ allowOutOfSync: confirmDestructive });
 
 	if (!result.ok) {
 		return json(
 			{
 				success: false,
-				error: result.error
+				error: result.error,
+				status: "status" in result ? result.status : undefined,
+				affected: "affected" in result ? result.affected : undefined
 			},
-			{ status: 400 }
+			{ status: "status" in result && result.status === "out_of_sync" ? 409 : 400 }
 		);
 	}
 

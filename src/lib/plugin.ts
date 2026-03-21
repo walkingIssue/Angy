@@ -66,7 +66,7 @@ export function angy(options: AngyPluginOptions = {}) {
 			return {
 				define: {
 					__ANGY_ROUTE_PATH__: JSON.stringify(resolvedConfig.routePath ?? "/api/translations"),
-					__ANGY_LOCALES: JSON.stringify(localeRotation)
+					__ANGY_LOCALES__: JSON.stringify(localeRotation)
 				},
 				optimizeDeps: {
 					exclude: ["angy", "angy/client", "angy/plugin", "angy/server"]

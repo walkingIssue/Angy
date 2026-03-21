@@ -1,4 +1,5 @@
 export type TranslationOrigin = "base" | "working";
+export type TranslationStatus = "base" | "working" | "none" | "fuzzy" | "out_of_sync";
 
 export type ResolvedKey = {
 	msgid: string;
@@ -20,6 +21,7 @@ export type TranslationEntry = {
 	isCommittedToWorking?: boolean;
 	matchesTargetTranslation?: boolean;
 	translationOrigin?: TranslationOrigin | null;
+	translationStatus?: TranslationStatus | null;
 };
 
 export type TranslationAlternative = {
@@ -33,12 +35,17 @@ export type TranslationAlternative = {
 	isCommittedToWorking?: boolean;
 	matchesTargetTranslation?: boolean;
 	translationOrigin?: TranslationOrigin | null;
+	translationStatus?: TranslationStatus | null;
 };
 
 export type TranslationContextResult = {
 	match: {
 		score: number;
 		via: string;
+	};
+	catalogState?: {
+		status: "ok" | "out_of_sync";
+		affectedCount: number;
 	};
 	entry: TranslationEntry;
 	alternatives: TranslationAlternative[];
@@ -59,7 +66,7 @@ export type TranslationCandidate = Pick<
 >;
 
 export const TRANSLATION_STATUS_TOOLTIP =
-	"'\u{1F914}' fuzzy translation needs review. '\u2705' target and working agree. '\u274C' no translation. '\u{1F6E0}\uFE0F' working differs from target.";
+	"'\u{1F914}' fuzzy translation needs review. '\u2705' translation is in base. '\u274C' no translation. '\u{1F6E0}\uFE0F' working differs from base. '\u26A0\uFE0F' catalogs are out of sync.";
 
 export function translationKey(msgid: string, msgctxt: string | null) {
 	return `${msgctxt ?? ""}::${msgid}`;
@@ -155,10 +162,11 @@ export function getTranslationStatus(item: {
 	matchesTargetTranslation?: boolean;
 	hasTranslation?: boolean;
 	isFuzzy?: boolean | null;
+	translationStatus?: TranslationStatus | null;
 }) {
-	if (item.hasTranslation && item.matchesTargetTranslation) return "\u2705";
-	if (item.isCommittedToWorking) return "\u{1F6E0}\uFE0F";
-	if (!item.hasTranslation) return "\u274C";
-	if (item.isFuzzy) return "\u{1F914}";
+	if (item.translationStatus === "out_of_sync") return "\u26A0\uFE0F";
+	if (item.translationStatus === "fuzzy" || item.isFuzzy) return "\u{1F914}";
+	if (item.translationStatus === "working" || item.isCommittedToWorking) return "\u{1F6E0}\uFE0F";
+	if (item.translationStatus === "none" || !item.hasTranslation) return "\u274C";
 	return "\u2705";
 }

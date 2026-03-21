@@ -44,7 +44,7 @@ export type SuggestionProviderInput = {
 	targetLocale: string;
 	systemMessage: string;
 	model: string;
-	apiKey: string;
+	apiKey: string | undefined;
 };
 
 export type SuggestionProvider = (
@@ -59,7 +59,7 @@ export type AngyConfigInput = {
 	sourceLocale: string;
 	targetLocale: string;
 	routePath?: string;
-	apiKey: string;
+	apiKey?: string;
 	systemMessage?: string;
 	suggestionModel?: string;
 	watchIgnore?: string[];
@@ -163,6 +163,24 @@ function validateLocaleAliasUsage(sourceLocale: string, targetLocale: string) {
 	}
 }
 
+function validateCatalogPathSemantics(next: TranslationHelperConfig) {
+	const baseLocale = inferLocaleFromCatalogPath(next.basePoPath);
+	const workingLocale = inferLocaleFromCatalogPath(next.workingPoPath);
+	const expectedWorkingLocale = `${next.targetLocale}-working`;
+
+	if (baseLocale !== next.targetLocale) {
+		throw new Error(
+			`[angy] basePoPath must point to the ${next.targetLocale}.po catalog. Received "${baseLocale ?? "unknown"}".`
+		);
+	}
+
+	if (workingLocale !== expectedWorkingLocale) {
+		throw new Error(
+			`[angy] workingPoPath must point to the ${expectedWorkingLocale}.po catalog. Received "${workingLocale ?? "unknown"}".`
+		);
+	}
+}
+
 export function registerWorkingCatalogWatchController(
 	controller: (path: string, delayMs?: number) => void
 ) {
@@ -206,7 +224,7 @@ export function resolveConfiguredLocaleAliases(
 	const usesDefaultSystemMessage =
 		next.systemMessage === buildDefaultSystemMessage(rawSourceLocale, rawTargetLocale);
 
-	return {
+	const resolved = {
 		...next,
 		sourceLocale: resolvedSourceLocale,
 		targetLocale: resolvedTargetLocale,
@@ -214,6 +232,9 @@ export function resolveConfiguredLocaleAliases(
 			? buildDefaultSystemMessage(resolvedSourceLocale, resolvedTargetLocale)
 			: next.systemMessage
 	};
+
+	validateCatalogPathSemantics(resolved);
+	return resolved;
 }
 
 export function completeAngyConfig(input: AngyConfigInput): TranslationHelperConfig {
@@ -222,8 +243,8 @@ export function completeAngyConfig(input: AngyConfigInput): TranslationHelperCon
 	assertNonEmptyString(input.sourceLocale, "sourceLocale");
 	assertNonEmptyString(input.targetLocale, "targetLocale");
 	validateLocaleAliasUsage(input.sourceLocale, input.targetLocale);
-	if (typeof input.apiKey !== "string") {
-		throw new Error(`[angy] apiKey is required and must be a string. Use an empty string to disable suggestions.`);
+	if (typeof input.apiKey !== "string" && typeof input.apiKey !== "undefined") {
+		throw new Error(`[angy] apiKey must be a string when provided. Use an empty string to disable suggestions.`);
 	}
 	validateRoutePath(input.routePath);
 	validateWatchIgnore(input.watchIgnore);
@@ -235,7 +256,7 @@ export function completeAngyConfig(input: AngyConfigInput): TranslationHelperCon
 		sourceLocale: input.sourceLocale,
 		targetLocale: input.targetLocale,
 		routePath: input.routePath ?? "/api/translations",
-		apiKey: input.apiKey,
+		apiKey: input.apiKey ?? "",
 		systemMessage:
 			input.systemMessage ??
 			buildDefaultSystemMessage(input.sourceLocale, input.targetLocale),
@@ -246,7 +267,7 @@ export function completeAngyConfig(input: AngyConfigInput): TranslationHelperCon
 }
 
 export function defineAngyConfig(config: AngyConfigInput) {
-	return completeAngyConfig(config);
+	return resolveConfiguredLocaleAliases(completeAngyConfig(config));
 }
 
 async function fileExists(path: string) {
@@ -269,14 +290,14 @@ async function loadTsConfigModule(path: string) {
 	await writeFile(tempPath, transformed.code, "utf8");
 
 	try {
-		return await import(`${pathToFileURL(tempPath).href}?t=${Date.now()}`);
+		return await import(/* @vite-ignore */ `${pathToFileURL(tempPath).href}?t=${Date.now()}`);
 	} finally {
 		await unlink(tempPath).catch(() => undefined);
 	}
 }
 
 async function loadJsConfigModule(path: string) {
-	return import(pathToFileURL(path).href);
+	return import(/* @vite-ignore */ pathToFileURL(path).href);
 }
 
 export async function loadAngyConfigFromRoot(root: string) {

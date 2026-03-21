@@ -1,4 +1,5 @@
 export type TranslationOrigin = "base" | "working";
+export type TranslationStatus = "base" | "working" | "none" | "fuzzy" | "out_of_sync";
 
 export type CommitBatchItem = {
 	resolvedMsgid: string;
@@ -37,4 +38,25 @@ export type NormalizedEntry = {
 	hasTranslation: boolean;
 	isFuzzy: boolean | undefined;
 	translationOrigin: TranslationOrigin;
+};
+
+export type CatalogIntegrityIssue =
+	| {
+			type: "key_mismatch";
+			msgid: string;
+			msgctxt: string | null;
+			reason: "missing_in_working" | "missing_in_base";
+	  }
+	| {
+			type: "missing_working_translation";
+			msgid: string;
+			msgctxt: string | null;
+			baseValue: string;
+	  };
+
+export type RotationImpactItem = {
+	msgid: string;
+	msgctxt: string | null;
+	baseValue: string;
+	workingValue: string;
 };

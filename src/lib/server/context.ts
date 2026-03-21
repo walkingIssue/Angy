@@ -1,11 +1,11 @@
 import { json } from "@sveltejs/kit";
 import {
-	applyWorkingState,
-	buildEntryMap,
 	buildLookupVariants,
 	catalogEntryKey,
 	createFuse,
-	readCatIndex
+	CatalogIntegrityError,
+	readCatalogPair,
+	resolveTranslationState
 } from "./catalog.ts";
 import type { NormalizedEntry } from "./types.ts";
 
@@ -283,16 +283,16 @@ export async function findTranslationContext(
 	key: string,
 	currentPath: string
 ) {
-	const baseIndex = await readCatIndex("base");
-	if (!baseIndex) return null;
-
-	const workingIndex = await readCatIndex("working");
-	const workingMap = workingIndex
-		? buildEntryMap(workingIndex.entries)
-		: new Map<string, NormalizedEntry>();
-	const effectiveEntries = baseIndex.entries.map((entry) =>
-		applyWorkingState(entry, workingMap.get(entryKey(entry.msgid, entry.msgctxt)))
-	);
+	const catalogPair = await readCatalogPair({ ensureWorking: true });
+	const effectiveEntries = catalogPair.baseEntries.map((entry) => {
+		const state = resolveTranslationState(entry, catalogPair.workingMap.get(entryKey(entry.msgid, entry.msgctxt)));
+		return {
+			...state.effectiveEntry,
+			hasTranslation: state.hasTranslation,
+			isFuzzy: state.isFuzzy,
+			translationOrigin: state.translationOrigin
+		};
+	});
 	const effectiveIndex = {
 		entries: effectiveEntries,
 		fuse: createFuse(effectiveEntries)
@@ -358,33 +358,37 @@ export async function findTranslationContext(
 			untranslatedSimilarityAlternatives
 		),
 		routeReference,
-		workingMap
+		baseMap: catalogPair.baseMap,
+		workingMap: catalogPair.workingMap,
+		catalogState: {
+			status: "ok" as const,
+			affectedCount: catalogPair.rotationImpact.length
+		}
 	};
 }
 
-export function toPublicEntry(entry: NormalizedEntry, workingEntry?: NormalizedEntry) {
-	const effective = workingEntry ?? entry;
-	const baseValue = entry.msgstr[0] ?? "";
-	const workingValue = workingEntry?.msgstr[0] ?? "";
-	const workingDiffersFromBase =
-		Boolean(workingEntry?.hasTranslation) && workingValue !== baseValue;
+export function toPublicEntry(
+	entry: NormalizedEntry,
+	workingEntry?: NormalizedEntry
+) {
+	const state = resolveTranslationState(entry, workingEntry);
 
 	return {
 		msgid: entry.msgid,
 		msgctxt: entry.msgctxt,
 		msgidPlural: entry.msgidPlural,
-		msgstr: effective.msgstr,
+		msgstr: state.effectiveEntry.msgstr,
 		references: entry.references,
 		extractedComments: entry.extractedComments,
-		flags: effective.flags,
-		previous: effective.previous,
-		obsolete: effective.obsolete,
-		hasTranslation: effective.hasTranslation,
-		isFuzzy: effective.isFuzzy,
-		isCommittedToWorking: workingDiffersFromBase,
-		matchesTargetTranslation:
-			Boolean(effective.hasTranslation) && (!workingEntry?.hasTranslation || workingValue === baseValue),
-		translationOrigin: workingDiffersFromBase ? "working" : "base"
+		flags: state.effectiveEntry.flags,
+		previous: state.effectiveEntry.previous,
+		obsolete: state.effectiveEntry.obsolete,
+		hasTranslation: state.hasTranslation,
+		isFuzzy: state.isFuzzy,
+		isCommittedToWorking: state.translationOrigin === "working",
+		matchesTargetTranslation: state.translationOrigin === "base" && state.hasTranslation,
+		translationOrigin: state.translationOrigin,
+		translationStatus: state.translationStatus
 	};
 }
 
@@ -393,24 +397,20 @@ export function toPublicAlternative(
 	score: number,
 	workingEntry?: NormalizedEntry
 ) {
-	const effective = workingEntry ?? entry;
-	const baseValue = entry.msgstr[0] ?? "";
-	const workingValue = workingEntry?.msgstr[0] ?? "";
-	const workingDiffersFromBase =
-		Boolean(workingEntry?.hasTranslation) && workingValue !== baseValue;
+	const state = resolveTranslationState(entry, workingEntry);
 
 	return {
 		msgid: entry.msgid,
 		msgctxt: entry.msgctxt,
 		score,
 		references: entry.references,
-		msgstr: effective.msgstr,
-		hasTranslation: effective.hasTranslation,
-		isFuzzy: effective.isFuzzy,
-		isCommittedToWorking: workingDiffersFromBase,
-		matchesTargetTranslation:
-			Boolean(effective.hasTranslation) && (!workingEntry?.hasTranslation || workingValue === baseValue),
-		translationOrigin: workingDiffersFromBase ? "working" : "base"
+		msgstr: state.effectiveEntry.msgstr,
+		hasTranslation: state.hasTranslation,
+		isFuzzy: state.isFuzzy,
+		isCommittedToWorking: state.translationOrigin === "working",
+		matchesTargetTranslation: state.translationOrigin === "base" && state.hasTranslation,
+		translationOrigin: state.translationOrigin,
+		translationStatus: state.translationStatus
 	};
 }
 
@@ -429,7 +429,25 @@ export async function handleContext(request: Request) {
 		);
 	}
 
-	const baseFound = await findTranslationContext(key, currentPath);
+	let baseFound;
+	try {
+		baseFound = await findTranslationContext(key, currentPath);
+	} catch (error) {
+		if (error instanceof CatalogIntegrityError) {
+			return json(
+				{
+					success: false,
+					error: error.message,
+					code: "catalog_integrity_error",
+					issues: error.issues
+				},
+				{ status: 409 }
+			);
+		}
+
+		throw error;
+	}
+
 	if (!baseFound) {
 		return json(
 			{
@@ -440,7 +458,9 @@ export async function handleContext(request: Request) {
 		);
 	}
 
-	const bestBase = baseFound.best.entry;
+	const bestBase =
+		baseFound.baseMap.get(entryKey(baseFound.best.entry.msgid, baseFound.best.entry.msgctxt)) ??
+		baseFound.best.entry;
 	const bestWorking = baseFound.workingMap.get(entryKey(bestBase.msgid, bestBase.msgctxt));
 
 	return json({
@@ -449,10 +469,13 @@ export async function handleContext(request: Request) {
 			score: baseFound.best.score,
 			via: baseFound.best.variant
 		},
+		catalogState: baseFound.catalogState,
 		entry: toPublicEntry(bestBase, bestWorking),
 		alternatives: baseFound.alternatives.map((item) => {
-			const workingAlt = baseFound.workingMap.get(entryKey(item.entry.msgid, item.entry.msgctxt));
-			return toPublicAlternative(item.entry, item.score, workingAlt);
+			const baseAlt =
+				baseFound.baseMap.get(entryKey(item.entry.msgid, item.entry.msgctxt)) ?? item.entry;
+			const workingAlt = baseFound.workingMap.get(entryKey(baseAlt.msgid, baseAlt.msgctxt));
+			return toPublicAlternative(baseAlt, item.score, workingAlt);
 		})
 	});
 }

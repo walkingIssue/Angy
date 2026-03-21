@@ -1,0 +1,193 @@
+# Angy Roadmap
+
+This is the working product-direction note for Angy.
+
+It is intentionally lightweight and can hold:
+
+- feature ideas
+- UX simplifications
+- workflow improvements
+- open design questions
+
+## Current UX concerns
+
+### Capture heuristics for large interactive surfaces
+
+The current click-capture behavior is better, but still heuristic-driven.
+
+Current pain point:
+
+- if a button, card, or interactive container contains a lot of nested copy, Angy can capture the whole descendant text blob instead of the smallest actionable label
+
+This makes lookup worse because the helper is no longer resolving the intended UI string. It is resolving a composite chunk of text taken from the entire interactive surface.
+
+Desired direction:
+
+- prefer the smallest meaningful label first
+- bias toward `aria-label`, direct text, then first meaningful descendant text
+- keep avoiding full subtree `textContent` as the default fallback
+- keep tightening behavior on large composite clickable cards
+
+## Known issues
+
+### Working-locale rotation can be misleading
+
+This is currently the highest-priority UX/data-confidence issue.
+
+Current risk:
+
+- Angy can rotate into the inferred working locale
+- but the rendered app does not always make that state obvious enough
+- if the page does not visibly reflect the working locale, it becomes hard to tell whether newly committed translations are actually being rendered
+
+Why this is dangerous:
+
+- users can lose confidence about whether work was applied
+- working translations may exist in the catalog without clear visual confirmation
+- the helper can appear to rotate correctly while the page still looks unchanged
+
+This needs to be addressed before the working-locale rotation can be considered trustworthy UX.
+
+Likely directions:
+
+- make working-locale state much more explicit in the UI
+- verify that QA rotation always produces a clearly visible rendered locale change when the working locale is selected
+- consider whether working-locale rotation should be gated differently until that feedback is reliable
+
+### Commit race can leave the UI in a misleading state
+
+This is less severe than before, but still worth watching.
+
+Current state:
+
+- draft-to-preview promotion removed the worst hot-write failure mode
+- preview promotion can still reload the page in dev
+- helper state still needs to stay trustworthy across reloads
+
+Why it still matters:
+
+- reload-heavy flows can still feel abrupt
+- helper state should remain obviously trustworthy after reload
+
+UI clarification needed:
+
+- green check should mean the translation exists in the base catalog
+- working-only commits should continue to show the hammer-and-screwdriver state
+- status icons should never imply "safely in base" when the item only exists in working
+
+### User edit cache is missing
+
+The helper now keeps draft edits locally, but the UX can still be clearer.
+
+Current risk:
+
+- if the helper reloads or the page races during commit, edited text can disappear from the form
+- even when a suggestion existed, the user-corrected version may be lost from the immediate workflow surface
+
+Desired direction:
+
+- keep draft restore obvious in the UI
+- keep staged vs draft vs committed state easy to read
+
+### Suggestion model reasoning mismatch
+
+The built-in suggestion request can still send a `reasoning` block even when the configured model family does not support reasoning controls.
+
+Current consequence:
+
+- suggestion requests can fail for non-reasoning models unless the config is adjusted manually
+
+Desired direction:
+
+- only send `reasoning` for models that actually support it
+- keep the default suggestion config aligned with the shipped default model
+
+### Compact focus mode
+
+The helper is useful, but it can still feel intrusive during normal page work.
+
+Current pain points:
+
+- too much information competes for attention at once
+- the originally selected text keeps taking space after the key is already resolved
+- alternatives are useful, but rendering the whole list at once can feel noisy
+- the helper reads more like a debugger than a focused translation surface
+
+Desired direction:
+
+- add a compact focus mode
+- hide the original selected text by default after resolution
+- keep only a compact matched-key summary visible in the main surface
+- show only the currently active alternative while preserving keyboard navigation
+- keep `Tab` and `Shift+Tab` navigation working exactly as it does now
+
+### Commit feedback
+
+Commit success and failure feedback should stay visible long enough to be useful.
+
+Open question:
+
+- should feedback live inside the helper
+- or move to a bottom-of-screen toast/status area
+
+### Capture coverage gaps
+
+The pickup/capture algorithm still misses valid strings in real pages.
+
+Current pain point:
+
+- some translatable strings on the smoke test page are not surfaced reliably through the helper workflow
+
+This matters because:
+
+- missed strings reduce trust in the tool
+- users cannot easily tell whether a string is unsupported, missed by heuristics, or just not found yet
+
+Desired direction:
+
+- improve coverage for normal visible UI strings
+- make failures easier to reason about when a string is not picked up
+- treat capture coverage as a first-class quality metric, not just a heuristic side effect
+
+### Cross-page references
+
+If a string is reused across multiple pages, references should be easier to inspect without crowding the main panel.
+
+Possible direction:
+
+- add a references action that opens a popup or secondary details surface
+- if necessary later, generate a route-oriented map from keys to component references and likely pages
+
+### Suggestion feedback loop
+
+Edited suggestions should be able to improve later suggestion quality.
+
+Current gap:
+
+- a suggestion can be accepted, edited, and committed
+- but that edited result is not explicitly fed back into later suggestion generation as a stronger style/example signal
+
+Desired direction:
+
+- treat accepted edited suggestions as better local examples for future suggestion requests
+- improve forward consistency without pretending this is full model training
+- keep the feedback loop grounded in project-local translation choices and approved wording
+
+## Catalog design
+
+The catalog model still needs a follow-up design pass.
+
+Questions still open:
+
+- how protected the base catalog should be in default mode
+- whether working catalog creation should always be automatic when missing
+- how much of promotion/rotation should be visible in everyday translator UX
+- whether promotion should be limited to an explicit migration mode
+
+## Documentation
+
+Planned repo showcase material:
+
+- screenshots in `docs/images`
+- short recordings of the helper flow
+- a tighter workflow walkthrough once the visuals are ready

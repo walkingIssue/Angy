@@ -1,14 +1,18 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
+
 	let {
 		text,
 		position = 'top',
 		disabled = false,
-		delay = 120
+		delay = 120,
+		children
 	}: {
 		text: string;
 		position?: 'top' | 'bottom' | 'left' | 'right';
 		disabled?: boolean;
 		delay?: number;
+		children?: Snippet;
 	} = $props();
 
 	let visible = $state(false);
@@ -43,7 +47,7 @@
 	onfocusin={show}
 	onfocusout={hide}
 >
-	<slot />
+	{@render children?.()}
 
 	{#if visible && !disabled && text}
 		<div

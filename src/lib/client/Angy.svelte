@@ -6,7 +6,15 @@
 	import { onMount } from "svelte";
 	import { draggable } from "./dragItem";
 	import PendingChangesDialog from "./PendingChangesDialog.svelte";
+	import RotationWarningDialog from "./RotationWarningDialog.svelte";
 	import TranslationHelperForm from "./TranslationHelperForm.svelte";
+	import {
+		clearDraftValue,
+		getDraftValue,
+		readDraftCache,
+		setDraftValue,
+		type DraftCacheItem
+	} from "./translationDrafts";
 	import {
 		readSuggestionCache,
 		requestTranslationSuggestions
@@ -27,6 +35,8 @@
 		__ANGY_ROUTE_PATH__?: string;
 		__ANGY_LOCALES__?: string[];
 	};
+	const LOCALE_STORAGE_KEY = "angy:locale";
+	const LOCALE_COOKIE_KEY = "locale";
 
 	const defaultEndpoint =
 		typeof runtimeConfig.__ANGY_ROUTE_PATH__ !== "undefined"
@@ -50,11 +60,12 @@
 	let contextResult = $state<TranslationContextResult | null>(null);
 
 	let stagedTranslations = $state<Record<string, DraftTranslation>>({});
+	let draftLookup = $state<Record<string, DraftCacheItem>>(readDraftCache());
 
 	let currentLocale = $state(defaultLocales);
 	let locale = 0;
 
-	let activeSwitchLocale = $state(true);
+	let activeSwitchLocale = $state(false);
 	let selectionStarted = false;
 	let capturedSelection: string | undefined = $state(undefined);
 	let spawnTranslation = $state(false);
@@ -66,6 +77,10 @@
 	let success = $state<string | null>(null);
 	let renderedLocale = $state<string>(currentLocale[locale] ?? "en");
 	let showPendingChangesDialog = $state(false);
+	let showRotationWarningDialog = $state(false);
+	let rotationImpact = $state<
+		Array<{ msgid: string; msgctxt: string | null; baseValue: string; workingValue: string }>
+	>([]);
 	let suggestionLookup = $state<Record<string, string>>(readSuggestionCache());
 	let suggestionPending = $state(false);
 
@@ -85,6 +100,23 @@
 		return currentLocale[locale];
 	}
 
+	function peekNextLocale() {
+		const nextIndex = locale >= currentLocale.length - 1 ? 0 : locale + 1;
+		return currentLocale[nextIndex];
+	}
+
+	function persistLocaleSelection(nextLocale: string) {
+		if (!browser) return;
+		localStorage.setItem(LOCALE_STORAGE_KEY, nextLocale);
+		document.cookie = `${LOCALE_COOKIE_KEY}=${nextLocale}; path=/; SameSite=Lax`;
+	}
+
+	function isWorkingLocaleName(value: string | null | undefined) {
+		return Boolean(value?.endsWith("-working"));
+	}
+
+	const previewOnly = $derived(isWorkingLocaleName(renderedLocale));
+
 	function focusTranslationInput() {
 		queueMicrotask(() => {
 			translationInputEl?.focus();
@@ -92,10 +124,34 @@
 		});
 	}
 
-	function handleLocaleToggle(event: MouseEvent) {
-		if (activeSwitchLocale) return;
+	async function handleLocaleToggle(event: MouseEvent) {
+		if (activeSwitchLocale || pending) return;
 		event.preventDefault();
-		loadLocale(getLocale());
+		const nextLocale = peekNextLocale();
+		persistLocaleSelection(nextLocale);
+
+		if (isWorkingLocaleName(nextLocale)) {
+			resetFeedback();
+			pending = true;
+
+			try {
+				const response = await fetch(`${endpoint}?intent=promote-working-preview`, {
+					method: "POST"
+				});
+				const payload = await response.json().catch(() => null);
+				if (!response.ok) {
+					error = payload?.error ?? "Failed to prepare working preview";
+					return;
+				}
+			} catch {
+				error = "Failed to prepare working preview";
+				return;
+			} finally {
+				pending = false;
+			}
+		}
+
+		await loadLocale(getLocale());
 	}
 
 	function getStaged(msgid: string, msgctxt: string | null) {
@@ -104,6 +160,10 @@
 
 	function getSuggestion(msgid: string, msgctxt: string | null) {
 		return suggestionLookup[translationKey(msgid, msgctxt)] ?? "";
+	}
+
+	function getDraft(msgid: string, msgctxt: string | null) {
+		return getDraftValue(draftLookup, msgid, msgctxt);
 	}
 
 	function isStaged(msgid: string, msgctxt: string | null) {
@@ -118,22 +178,59 @@
 		focusedAltKey = key;
 	}
 
+	function persistDraft(msgid: string, msgctxt: string | null, item: DraftCacheItem) {
+		draftLookup = setDraftValue(draftLookup, msgid, msgctxt, item);
+	}
+
+	function clearDraft(msgid: string, msgctxt: string | null) {
+		draftLookup = clearDraftValue(draftLookup, msgid, msgctxt);
+	}
+
 	function resetFeedback() {
 		error = null;
 		success = null;
 	}
 
-	async function rotateCatalogs() {
-		if (rotatePending || pending) return;
-		if (!confirm("Rotate catalogs? This will back up both catalogs and promote the working catalog into the base catalog.")) {
-			return;
-		}
-
+	async function runRotation(confirmDestructive = false) {
 		rotatePending = true;
 		resetFeedback();
 
 		try {
 			const response = await fetch(`${endpoint}?intent=rotate-catalogs`, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json"
+				},
+				body: JSON.stringify({ confirmDestructive })
+			});
+			const payload = await response.json().catch(() => null);
+
+			if (!response.ok) {
+				if (payload?.code === "rotation_confirmation_required") {
+					rotationImpact = Array.isArray(payload?.affected) ? payload.affected : [];
+					showRotationWarningDialog = true;
+					error = payload?.error ?? "Catalog rotation requires confirmation";
+					return;
+				}
+
+				error = payload?.error ?? "Catalog rotation failed";
+				return;
+			}
+
+			showRotationWarningDialog = false;
+			rotationImpact = [];
+			success = payload?.message ?? "Catalogs rotated";
+		} catch {
+			error = "Catalog rotation failed";
+		} finally {
+			rotatePending = false;
+		}
+	}
+
+	async function rotateCatalogs() {
+		if (rotatePending || pending) return;
+		try {
+			const response = await fetch(`${endpoint}?intent=rotate-preflight`, {
 				method: "POST"
 			});
 			const payload = await response.json().catch(() => null);
@@ -143,11 +240,24 @@
 				return;
 			}
 
-			success = payload?.message ?? "Catalogs rotated";
+			if (Array.isArray(payload?.affected) && payload.affected.length) {
+				rotationImpact = Array.isArray(payload?.affected) ? payload.affected : [];
+				showRotationWarningDialog = true;
+				resetFeedback();
+				return;
+			}
+
+			if (
+				!confirm(
+					"Rotate catalogs? This will back up both catalogs and promote the working catalog into the base catalog."
+				)
+			) {
+				return;
+			}
+
+			await runRotation(false);
 		} catch {
 			error = "Catalog rotation failed";
-		} finally {
-			rotatePending = false;
 		}
 	}
 
@@ -160,46 +270,57 @@
 		return Object.values(stagedTranslations).some((item) => item.isDirty);
 	}
 
-	function applyCommittedTranslations(
-		currentContext: TranslationContextResult | null,
-		items: DraftTranslation[]
-	): TranslationContextResult | null {
-		if (!currentContext || !items.length) return currentContext;
-
-		const updates = new Map(
-			items.map((item) => [translationKey(item.msgid, item.msgctxt), item.value])
+	function getResolvedInputValue(msgid: string, msgctxt: string | null) {
+		return (
+			getStaged(msgid, msgctxt)?.value ||
+			getDraft(msgid, msgctxt)?.value ||
+			getSuggestion(msgid, msgctxt) ||
+			getEntryOriginalValue(contextResult, msgid, msgctxt)
 		);
+	}
 
-		const updateEntry = <T extends { msgid: string; msgctxt: string | null; msgstr: string[]; hasTranslation?: boolean; isCommittedToWorking?: boolean; isFuzzy?: boolean | null; translationOrigin?: "base" | "working" | null }>(
-			entry: T
-		): T => {
-			const nextValue = updates.get(translationKey(entry.msgid, entry.msgctxt));
-			if (!nextValue) return entry;
+	function syncDraftForResolved(msgid: string, msgctxt: string | null, value: string) {
+		const originalValue = getEntryOriginalValue(contextResult, msgid, msgctxt);
+		const trimmedValue = value.trim();
+		if (!trimmedValue || trimmedValue === originalValue) {
+			clearDraft(msgid, msgctxt);
+			return;
+		}
 
-			return {
-				...entry,
-				msgstr: [nextValue],
-				hasTranslation: true,
-				isCommittedToWorking: true,
-				matchesTargetTranslation: false,
-				isFuzzy: false,
-				translationOrigin: "working"
-			};
-		};
+		persistDraft(msgid, msgctxt, {
+			value,
+			isDirty: trimmedValue !== originalValue
+		});
+	}
 
-		return {
-			...currentContext,
-			entry: updateEntry(currentContext.entry),
-			alternatives: currentContext.alternatives.map((alternative) => updateEntry(alternative))
-		};
+	function handleTranslationInput() {
+		const resolved = getEffectiveResolvedKey(selectedResolvedKey, contextResult);
+		if (!resolved) return;
+		syncDraftForResolved(resolved.msgid, resolved.msgctxt, translatedValue);
+	}
+
+	async function refreshContextAndReconcile(payload: DraftTranslation[]) {
+		if (!capturedSelection) return true;
+
+		await fetchContext();
+
+		let allReconciled = true;
+		for (const item of payload) {
+			const latest = getEntryOriginalValue(contextResult, item.msgid, item.msgctxt);
+			if (latest === item.value) {
+				clearDraft(item.msgid, item.msgctxt);
+			} else {
+				allReconciled = false;
+				persistDraft(item.msgid, item.msgctxt, { value: item.value, isDirty: true });
+			}
+		}
+
+		return allReconciled;
 	}
 
 	function selectResolvedKey(msgid: string, msgctxt: string | null, focusInput = false) {
 		selectedResolvedKey = { msgid, msgctxt };
-		translatedValue =
-			getStaged(msgid, msgctxt)?.value ||
-			getSuggestion(msgid, msgctxt) ||
-			getEntryOriginalValue(contextResult, msgid, msgctxt);
+		translatedValue = getResolvedInputValue(msgid, msgctxt);
 
 		resetFeedback();
 
@@ -277,6 +398,10 @@
 
 	function stageCurrentTranslation(event?: Event) {
 		event?.preventDefault();
+		if (previewOnly) {
+			error = "Working locale is preview-only. Rotate back to a non-working locale before staging.";
+			return;
+		}
 
 		const resolved = getEffectiveResolvedKey(selectedResolvedKey, contextResult);
 		if (!resolved?.msgid) {
@@ -302,6 +427,10 @@
 				isDirty: value !== originalValue
 			}
 		};
+		persistDraft(resolved.msgid, resolved.msgctxt, {
+			value,
+			isDirty: value !== originalValue
+		});
 
 		error = null;
 		success = "Staged";
@@ -312,6 +441,11 @@
 	}
 
 	async function commitStagedTranslations() {
+		if (previewOnly) {
+			error = "Working locale is preview-only. Commit from the base or target locale instead.";
+			return false;
+		}
+
 		const payload = Object.values(stagedTranslations).filter((item) => item.isDirty);
 		if (!payload.length) {
 			error = "No changed translations to submit";
@@ -321,37 +455,43 @@
 		pending = true;
 		resetFeedback();
 
-		const res = await fetch(`${endpoint}?intent=commit-batch`, {
-			method: "POST",
-			headers: {
-				"content-type": "application/json"
-			},
-			body: JSON.stringify({
-				items: payload.map((item) => ({
-					resolvedMsgid: item.msgid,
-					resolvedMsgctxt: item.msgctxt,
-					translationValue: item.value
-				}))
-			})
-		});
+		try {
+			const res = await fetch(`${endpoint}?intent=commit-batch`, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json"
+				},
+				body: JSON.stringify({
+					items: payload.map((item) => ({
+						resolvedMsgid: item.msgid,
+						resolvedMsgctxt: item.msgctxt,
+						translationValue: item.value
+					}))
+				})
+			});
 
-		const json = await res.json();
-		pending = false;
+			const json = await res.json().catch(() => null);
 
-		if (!res.ok) {
-			error = json.error ?? "Batch commit failed";
-			return false;
+			if (!res.ok) {
+				error = json?.error ?? "Batch commit failed";
+				return false;
+			}
+
+			const reconciled = await refreshContextAndReconcile(payload);
+			const next = { ...stagedTranslations };
+			for (const item of payload) {
+				if (reconciled || getEntryOriginalValue(contextResult, item.msgid, item.msgctxt) === item.value) {
+					delete next[translationKey(item.msgid, item.msgctxt)];
+				}
+			}
+			stagedTranslations = next;
+			success = reconciled
+				? (json?.message ?? "Translations committed")
+				: "Commit may have landed; verifying catalog state. Your edits were kept locally.";
+			return true;
+		} finally {
+			pending = false;
 		}
-
-		success = json.message ?? "Translations committed";
-
-		const next = { ...stagedTranslations };
-		for (const item of payload) {
-			delete next[translationKey(item.msgid, item.msgctxt)];
-		}
-		stagedTranslations = next;
-		contextResult = applyCommittedTranslations(contextResult, payload);
-		return true;
 	}
 
 	async function submitStagedTranslations(event: SubmitEvent) {
@@ -400,8 +540,10 @@
 			msgid: json.entry.msgid,
 			msgctxt: json.entry.msgctxt
 		};
+		const currentDraft = getDraft(json.entry.msgid, json.entry.msgctxt);
 		translatedValue =
 			getStaged(json.entry.msgid, json.entry.msgctxt)?.value ||
+			currentDraft?.value ||
 			getSuggestion(json.entry.msgid, json.entry.msgctxt) ||
 			json.entry.msgstr?.[0] ||
 			"";
@@ -419,7 +561,8 @@
 					const original = getEntryOriginalValue(contextResult, resolved.msgid, resolved.msgctxt);
 					const currentSuggestion = getSuggestion(resolved.msgid, resolved.msgctxt);
 
-					if (!staged && translatedValue === original && currentSuggestion) {
+					const draft = getDraft(resolved.msgid, resolved.msgctxt);
+					if (!staged && !draft && translatedValue === original && currentSuggestion) {
 						translatedValue = currentSuggestion;
 					}
 				})
@@ -431,7 +574,9 @@
 				});
 		}
 
-		focusTranslationInput();
+		if (!previewOnly) {
+			focusTranslationInput();
+		}
 	}
 
 	function closeTranslation() {
@@ -442,6 +587,7 @@
 		selectedResolvedKey = null;
 		focusedAltKey = null;
 		showPendingChangesDialog = false;
+		showRotationWarningDialog = false;
 		resetFeedback();
 		resetContextState();
 	}
@@ -458,6 +604,9 @@
 	}
 
 	function discardAndCloseTranslation() {
+		for (const item of Object.values(stagedTranslations)) {
+			clearDraft(item.msgid, item.msgctxt);
+		}
 		stagedTranslations = {};
 		closeTranslation();
 	}
@@ -481,17 +630,44 @@
 
 		if (el instanceof HTMLInputElement) {
 			return (
-				el.value?.trim() ||
 				el.getAttribute("aria-label")?.trim() ||
+				el.value?.trim() ||
 				el.title?.trim() ||
 				null
 			);
 		}
 
+		function getFirstDescendantTextCandidate(root: Element) {
+			const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+			let current = walker.nextNode();
+
+			while (current) {
+				if (current instanceof HTMLElement) {
+					const text = current.innerText?.trim() || current.textContent?.trim() || "";
+					if (text) {
+						return text;
+					}
+				}
+
+				current = walker.nextNode();
+			}
+
+			return "";
+		}
+
+		const directText = [...el.childNodes]
+			.filter((node) => node.nodeType === Node.TEXT_NODE)
+			.map((node) => node.textContent?.trim() ?? "")
+			.filter(Boolean)
+			.slice(0,1)[0]
+			.trim();
+		const descendantText = getFirstDescendantTextCandidate(el);
+
 		return (
 			el.getAttribute("aria-label")?.trim() ||
-			el.textContent?.trim() ||
 			el.getAttribute("title")?.trim() ||
+			directText ||
+			descendantText ||
 			null
 		);
 	}
@@ -565,6 +741,17 @@
 	}
 
 	onMount(translationForm);
+
+	onMount(() => {
+		if (!browser) return;
+		const storedLocale = localStorage.getItem(LOCALE_STORAGE_KEY);
+		if (!storedLocale) return;
+		const nextIndex = currentLocale.findIndex((item) => item === storedLocale);
+		if (nextIndex >= 0) {
+			locale = nextIndex;
+			renderedLocale = currentLocale[nextIndex];
+		}
+	});
 </script>
 
 <div class="translator-actions sticky-rotate">
@@ -602,8 +789,8 @@
 			class="translator-toggle-button"
 			onclick={handleLocaleToggle}
 			title="qa-button"
-			disabled={activeSwitchLocale}
-			aria-disabled={activeSwitchLocale}
+			disabled={activeSwitchLocale || pending}
+			aria-disabled={activeSwitchLocale || pending}
 		>
 			[-QA-] {renderedLocale}
 		</button>
@@ -623,9 +810,15 @@
 			{pending}
 			{error}
 			{success}
+			{previewOnly}
+			hasDraft={Boolean(
+				selectedResolvedKey &&
+					getDraft(selectedResolvedKey.msgid, selectedResolvedKey.msgctxt)?.isDirty
+			)}
 			onClose={requestCloseTranslation}
 			onSubmit={submitStagedTranslations}
 			onStage={stageCurrentTranslation}
+			onInputValue={handleTranslationInput}
 			onAltFocusChange={setFocusedAltKey}
 			{onAltKeydown}
 			onSelectAlt={handleSelectAlt}
@@ -642,6 +835,18 @@
 			onCancel={() => (showPendingChangesDialog = false)}
 			onDiscard={discardAndCloseTranslation}
 			onSubmit={() => void submitAndCloseTranslation()}
+		/>
+	{/if}
+
+	{#if showRotationWarningDialog}
+		<RotationWarningDialog
+			pending={rotatePending}
+			affected={rotationImpact}
+			onCancel={() => {
+				showRotationWarningDialog = false;
+				rotationImpact = [];
+			}}
+			onConfirm={() => void runRotation(true)}
 		/>
 	{/if}
 </div>
