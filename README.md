@@ -28,7 +28,7 @@ npm install @walkinissue/angy
 
 ## Docs site
 
-- [Showcase and docs](./docs/index.html)
+- [Showcase and docs](https://walkingissue.github.io/Angy/)
 - [Release notes](./docs/changelog/0.2.18.md)
 
 ## Integration
