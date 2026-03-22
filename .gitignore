@@ -30,3 +30,7 @@ TestResults/
 
 .DS_Store
 Thumbs.db
+
+docs/images/.mkv/
+docs/images/.mp4/
+docs/images/failed/

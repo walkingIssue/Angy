@@ -184,6 +184,16 @@ Questions still open:
 - how much of promotion/rotation should be visible in everyday translator UX
 - whether promotion should be limited to an explicit migration mode
 
+## Runtime independence
+
+Longer term, Angy should depend less on Wuchale-specific assumptions.
+
+Possible direction:
+
+- make Angy runtime-agnostic enough to work with other catalog systems, including `.inlang`
+- move Wuchale-specific behavior behind integration hooks instead of treating it as the default mental model
+- allow a config-level locale switcher method that accepts a locale string and lets the host app decide how locale loading/rendering happens
+
 ## Documentation
 
 Planned repo showcase material:
