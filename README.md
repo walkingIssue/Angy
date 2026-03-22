@@ -29,7 +29,7 @@ npm install @walkinissue/angy
 ## Docs site
 
 - [Showcase and docs](https://walkingissue.github.io/Angy/)
-- [Release notes](./docs/changelog/0.2.18.md)
+- [Release notes](./docs/changelog/0.2.19.md)
 
 ## Integration
 
@@ -120,7 +120,7 @@ Reasoning is validated per model. Non-reasoning models like `gpt-4.1-mini` do no
 
 ## Docs
 
-- [Release notes](./docs/changelog/0.2.18.md)
+- [Release notes](./docs/changelog/0.2.19.md)
 - [Roadmap](./docs/roadmap.md)
 - [Wuchale runtime wiring](./docs/wuchale-runtime.md)
 

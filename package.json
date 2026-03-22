@@ -1,6 +1,6 @@
 {
 	"name": "@walkinissue/angy",
-	"version": "0.2.18",
+	"version": "0.2.19",
 	"description": "Dev-only SvelteKit translation helper for in-app PO catalog lookup, staging, and commit flows.",
 	"type": "module",
 	"files": [
