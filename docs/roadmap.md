@@ -79,11 +79,6 @@ UI clarification needed:
 
 The helper now keeps draft edits locally, but the UX can still be clearer.
 
-Current risk:
-
-- if the helper reloads or the page races during commit, edited text can disappear from the form
-- even when a suggestion existed, the user-corrected version may be lost from the immediate workflow surface
-
 Desired direction:
 
 - keep draft restore obvious in the UI
@@ -132,11 +127,7 @@ Open question:
 
 ### Capture coverage gaps
 
-The pickup/capture algorithm still misses valid strings in real pages.
-
-Current pain point:
-
-- some translatable strings on the smoke test page are not surfaced reliably through the helper workflow
+The pickup/capture algorithm can still miss valid strings in real pages.
 
 This matters because:
 
@@ -199,5 +190,4 @@ Possible direction:
 Planned repo showcase material:
 
 - screenshots in `docs/images`
-- short recordings of the helper flow
-- a tighter workflow walkthrough once the visuals are ready
+- keep the docs page tidy as the showcase grows

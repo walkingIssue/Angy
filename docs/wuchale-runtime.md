@@ -89,21 +89,6 @@ async function applyLocale(locale: string) {
 }
 ```
 
-## Practical Smoke-Test Pattern
-
-This is the pattern used in the smoke app:
-
-- `+layout.svelte`
-  - imports `../locales/main.loader.svelte.js`
-  - reads `angy:locale` from `localStorage`
-  - calls `loadLocale(...)` on mount
-  - listens for `storage` events so Angy-driven locale changes are reflected in the page
-- `hooks.server.ts`
-  - imports `./locales/main.loader.server.svelte.js`
-  - awaits `loadLocales(...)`
-  - resolves the active locale from the `locale` cookie
-  - wraps the request with `runWithLocale(...)`
-
 ## Draft promotion
 
 Angy does not write directly into the hot runtime working catalog while editing.
@@ -143,16 +128,6 @@ That makes it easy for:
 
 to agree on the active locale without custom glue everywhere.
 
-### Always keep the source locale available
-
-Source locale rotation is useful for visual QA:
-
-- compare source and target layouts
-- catch overflow and wrapping issues
-- verify that the translated copy still fits the page
-
-So source locale should stay available in the rotation, even after catalog promotion.
-
 ### Fail fast on missing runtime wiring
 
 When the helper rotates locale but the page does not change:
@@ -162,15 +137,3 @@ When the helper rotates locale but the page does not change:
 3. verify `runWithLocale(...)` wraps the request
 4. verify the requested locale exists in `src/locales/data.js`
 5. verify the cookie and localStorage values match a supported locale
-
-### Keep smoke tests honest
-
-A smoke app should not only mount `<Angy />`.
-
-It should also:
-
-- render copy through Wuchale
-- support locale switching
-- prove that the server/runtime path works
-
-Otherwise the smoke test only proves that the widget renders, not that the translation workflow is actually integrated.
