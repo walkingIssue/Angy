@@ -82,7 +82,9 @@ export const handler = createAngyHandler();
 
 export {
 	defineAngyConfig,
+	normalizeSuggestionModelConfig,
 	type AngyConfigInput,
+	type SuggestionModelConfig,
 	type SuggestionProvider,
 	type SuggestionProviderInput,
 	type SuggestionRequestItem,
@@ -96,3 +98,4 @@ export {
 	readCatalogPair,
 	resolveTranslationState
 } from "./catalog.ts";
+export { buildSuggestionRequestBody } from "./suggestions.ts";

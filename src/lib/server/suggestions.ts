@@ -1,6 +1,10 @@
 import { json } from "@sveltejs/kit";
 import type { TranslationContextResult } from "../client/toggleQA.shared";
-import type { SuggestionRequestItem, SuggestionResponseItem } from "./config.ts";
+import type {
+	SuggestionModelConfig,
+	SuggestionRequestItem,
+	SuggestionResponseItem
+} from "./config.ts";
 import { getTranslationHelperConfig } from "./config.ts";
 
 function getEntriesForSuggestions(contextResult: TranslationContextResult) {
@@ -57,6 +61,66 @@ function parseSuggestions(responseText: string): SuggestionResponseItem[] {
 	}
 }
 
+export function buildSuggestionRequestBody({
+	context,
+	items,
+	modelConfig,
+	systemMessage
+}: {
+	context: TranslationContextResult;
+	items: SuggestionRequestItem[];
+	modelConfig: SuggestionModelConfig;
+	systemMessage: string;
+}) {
+	const body: Record<string, unknown> = {
+		model: modelConfig.model,
+		input: [
+			{
+				role: "system",
+				content: [{ type: "input_text", text: systemMessage }]
+			},
+			{
+				role: "user",
+				content: [{ type: "input_text", text: buildUserMessage(context, items) }]
+			}
+		],
+		text: {
+			format: {
+				type: "json_schema",
+				name: "translation_suggestions",
+				schema: {
+					type: "object",
+					additionalProperties: false,
+					properties: {
+						items: {
+							type: "array",
+							items: {
+								type: "object",
+								additionalProperties: false,
+								properties: {
+									msgid: { type: "string" },
+									msgctxt: { type: ["string", "null"] },
+									suggestion: { type: "string" }
+								},
+								required: ["msgid", "msgctxt", "suggestion"]
+							}
+						}
+					},
+					required: ["items"]
+				}
+			}
+		}
+	};
+
+	if (modelConfig.reasoning && modelConfig.reasoning !== "none") {
+		body.reasoning = {
+			effort: modelConfig.reasoning
+		};
+	}
+
+	return body;
+}
+
 export async function handleSuggestions(request: Request) {
 	const {
 		apiKey,
@@ -88,7 +152,7 @@ export async function handleSuggestions(request: Request) {
 			sourceLocale,
 			targetLocale,
 			systemMessage,
-			model: suggestionModel,
+			suggestionModel,
 			apiKey
 		});
 
@@ -109,7 +173,8 @@ export async function handleSuggestions(request: Request) {
 
 	try {
 		console.info("[angy] Suggestion request starting.", {
-			model: suggestionModel,
+			model: suggestionModel.model,
+			reasoning: suggestionModel.reasoning ?? null,
 			sourceLocale,
 			targetLocale,
 			itemCount: items.length,
@@ -122,48 +187,14 @@ export async function handleSuggestions(request: Request) {
 				Authorization: `Bearer ${apiKey}`,
 				"content-type": "application/json"
 			},
-			body: JSON.stringify({
-				model: suggestionModel,
-				reasoning: {
-					effort: "medium"
-				},
-				input: [
-					{
-						role: "system",
-						content: [{ type: "input_text", text: systemMessage }]
-					},
-					{
-						role: "user",
-						content: [{ type: "input_text", text: buildUserMessage(context, items) }]
-					}
-				],
-				text: {
-					format: {
-						type: "json_schema",
-						name: "translation_suggestions",
-						schema: {
-							type: "object",
-							additionalProperties: false,
-							properties: {
-								items: {
-									type: "array",
-									items: {
-										type: "object",
-										additionalProperties: false,
-										properties: {
-											msgid: { type: "string" },
-											msgctxt: { type: ["string", "null"] },
-											suggestion: { type: "string" }
-										},
-										required: ["msgid", "msgctxt", "suggestion"]
-									}
-								}
-							},
-							required: ["items"]
-						}
-					}
-				}
-			})
+			body: JSON.stringify(
+				buildSuggestionRequestBody({
+					context,
+					items,
+					modelConfig: suggestionModel,
+					systemMessage
+				})
+			)
 		});
 
 		if (!response.ok) {

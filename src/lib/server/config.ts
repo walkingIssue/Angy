@@ -21,7 +21,7 @@ export type TranslationHelperConfig = {
 	routePath: string;
 	apiKey: string;
 	systemMessage: string;
-	suggestionModel: string;
+	suggestionModel: SuggestionModelConfig;
 	watchIgnore: string[];
 	suggestionProvider?: SuggestionProvider;
 };
@@ -43,7 +43,7 @@ export type SuggestionProviderInput = {
 	sourceLocale: string;
 	targetLocale: string;
 	systemMessage: string;
-	model: string;
+	suggestionModel: SuggestionModelConfig;
 	apiKey: string | undefined;
 };
 
@@ -53,6 +53,64 @@ export type SuggestionProvider = (
 
 export type TranslationHelperUserConfig = Partial<TranslationHelperConfig>;
 
+const NON_REASONING_SUGGESTION_MODELS = [
+	"gpt-4.1",
+	"gpt-4.1-mini",
+	"gpt-4.1-nano"
+] as const;
+const GPT54_REASONING_EFFORTS = ["none", "low", "medium", "high", "xhigh"] as const;
+const GPT51_REASONING_EFFORTS = ["none", "low", "medium", "high"] as const;
+const GPT5_REASONING_EFFORTS = ["minimal", "low", "medium", "high"] as const;
+const GPT5_PRO_REASONING_EFFORTS = ["high"] as const;
+const GPT5X_PRO_REASONING_EFFORTS = ["medium", "high", "xhigh"] as const;
+
+type NonReasoningSuggestionModelName = (typeof NON_REASONING_SUGGESTION_MODELS)[number];
+export type SuggestionReasoningEffort =
+	| (typeof GPT54_REASONING_EFFORTS)[number]
+	| (typeof GPT51_REASONING_EFFORTS)[number]
+	| (typeof GPT5_REASONING_EFFORTS)[number];
+
+type NonReasoningSuggestionModel = {
+	model: NonReasoningSuggestionModelName;
+	reasoning?: null;
+};
+
+type SuggestionModelWithReasoning<
+	TModel extends string,
+	TEffort extends readonly string[]
+> = {
+	model: TModel;
+	reasoning?: TEffort[number];
+};
+
+export type SuggestionModelConfig =
+	| NonReasoningSuggestionModel
+	| SuggestionModelWithReasoning<"gpt-5.4", typeof GPT54_REASONING_EFFORTS>
+	| SuggestionModelWithReasoning<"gpt-5.4-mini", typeof GPT54_REASONING_EFFORTS>
+	| SuggestionModelWithReasoning<"gpt-5.4-nano", typeof GPT54_REASONING_EFFORTS>
+	| SuggestionModelWithReasoning<"gpt-5.2", typeof GPT54_REASONING_EFFORTS>
+	| SuggestionModelWithReasoning<"gpt-5.1", typeof GPT51_REASONING_EFFORTS>
+	| SuggestionModelWithReasoning<"gpt-5", typeof GPT5_REASONING_EFFORTS>
+	| SuggestionModelWithReasoning<"gpt-5-pro", typeof GPT5_PRO_REASONING_EFFORTS>
+	| SuggestionModelWithReasoning<"gpt-5.2-pro", typeof GPT5X_PRO_REASONING_EFFORTS>
+	| SuggestionModelWithReasoning<"gpt-5.4-pro", typeof GPT5X_PRO_REASONING_EFFORTS>;
+
+const REASONING_EFFORTS_BY_MODEL = {
+	"gpt-5.4": GPT54_REASONING_EFFORTS,
+	"gpt-5.4-mini": GPT54_REASONING_EFFORTS,
+	"gpt-5.4-nano": GPT54_REASONING_EFFORTS,
+	"gpt-5.2": GPT54_REASONING_EFFORTS,
+	"gpt-5.1": GPT51_REASONING_EFFORTS,
+	"gpt-5": GPT5_REASONING_EFFORTS,
+	"gpt-5-pro": GPT5_PRO_REASONING_EFFORTS,
+	"gpt-5.2-pro": GPT5X_PRO_REASONING_EFFORTS,
+	"gpt-5.4-pro": GPT5X_PRO_REASONING_EFFORTS
+} as const;
+
+const DEFAULT_SUGGESTION_MODEL: SuggestionModelConfig = {
+	model: "gpt-4.1-mini"
+};
+
 export type AngyConfigInput = {
 	basePoPath: string;
 	workingPoPath: string;
@@ -61,7 +119,7 @@ export type AngyConfigInput = {
 	routePath?: string;
 	apiKey?: string;
 	systemMessage?: string;
-	suggestionModel?: string;
+	suggestionModel?: SuggestionModelConfig;
 	watchIgnore?: string[];
 	suggestionProvider?: SuggestionProvider;
 };
@@ -97,6 +155,75 @@ function validateSuggestionProvider(suggestionProvider: unknown) {
 	}
 }
 
+export function isNonReasoningSuggestionModel(
+	model: string
+): model is NonReasoningSuggestionModelName {
+	return NON_REASONING_SUGGESTION_MODELS.includes(model as NonReasoningSuggestionModelName);
+}
+
+function isSupportedSuggestionModel(model: string): model is SuggestionModelConfig["model"] {
+	return (
+		isNonReasoningSuggestionModel(model) ||
+		Object.prototype.hasOwnProperty.call(REASONING_EFFORTS_BY_MODEL, model)
+	);
+}
+
+export function normalizeSuggestionModelConfig(
+	input: SuggestionModelConfig | undefined
+): SuggestionModelConfig {
+	const suggestionModel = input ?? DEFAULT_SUGGESTION_MODEL;
+
+	if (typeof suggestionModel !== "object" || suggestionModel == null || Array.isArray(suggestionModel)) {
+		throw new Error(
+			`[angy] suggestionModel must be an object like { model: "gpt-4.1-mini" }.`
+		);
+	}
+
+	if (typeof suggestionModel.model !== "string" || !suggestionModel.model.trim()) {
+		throw new Error(`[angy] suggestionModel.model is required and must be a non-empty string.`);
+	}
+
+	if (!isSupportedSuggestionModel(suggestionModel.model)) {
+		throw new Error(`[angy] Unsupported suggestionModel.model "${suggestionModel.model}".`);
+	}
+
+	if (isNonReasoningSuggestionModel(suggestionModel.model)) {
+		if (
+			!("reasoning" in suggestionModel) ||
+			suggestionModel.reasoning === undefined ||
+			suggestionModel.reasoning === null
+		) {
+			return { model: suggestionModel.model, reasoning: null };
+		}
+
+		throw new Error(
+			`[angy] suggestionModel.reasoning is not supported for ${suggestionModel.model}.`
+		);
+	}
+
+	const allowedReasoning = REASONING_EFFORTS_BY_MODEL[suggestionModel.model];
+	const reasoning = suggestionModel.reasoning;
+
+	if (reasoning == null) {
+		if (suggestionModel.model === "gpt-5-pro") {
+			return { model: suggestionModel.model, reasoning: "high" };
+		}
+
+		return { model: suggestionModel.model };
+	}
+
+	if (!allowedReasoning.includes(reasoning as (typeof allowedReasoning)[number])) {
+		throw new Error(
+			`[angy] suggestionModel.reasoning "${reasoning}" is not supported for ${suggestionModel.model}.`
+		);
+	}
+
+	return {
+		model: suggestionModel.model,
+		reasoning
+	} as SuggestionModelConfig;
+}
+
 const config: TranslationHelperConfig = {
 	basePoPath: resolve(__dirname, "../../locales/en.po"),
 	workingPoPath: resolve(__dirname, "../../locales/en-working.po"),
@@ -105,7 +232,7 @@ const config: TranslationHelperConfig = {
 	routePath: "/api/translations",
 	apiKey: "",
 	systemMessage: buildDefaultSystemMessage("sv", "en"),
-	suggestionModel: "gpt-4.1-mini",
+	suggestionModel: DEFAULT_SUGGESTION_MODEL,
 	watchIgnore: ["**/en-working.po"]
 };
 
@@ -260,7 +387,7 @@ export function completeAngyConfig(input: AngyConfigInput): TranslationHelperCon
 		systemMessage:
 			input.systemMessage ??
 			buildDefaultSystemMessage(input.sourceLocale, input.targetLocale),
-		suggestionModel: input.suggestionModel ?? "gpt-4.1-mini",
+		suggestionModel: normalizeSuggestionModelConfig(input.suggestionModel),
 		watchIgnore: input.watchIgnore ?? ["**/en-working.po"],
 		suggestionProvider: input.suggestionProvider
 	};

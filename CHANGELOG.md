@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Persist selected locale more reliably across preview-triggered reloads
 - Enforce stricter base/working catalog path validation
 - Improve helper capture for nested interactive labels
+- Type and validate `suggestionModel` against the supported OpenAI model/reasoning combinations
 - Fix the QA/locale toggle interaction inside the draggable helper
 - Suppress drag-release clicks so dragging the QA control does not switch locale on drop
 - Replace the remaining slot usage with Svelte 5 `{@render}`
@@ -22,7 +23,6 @@ All notable changes to this project will be documented in this file.
 - Add roadmap notes for a compact focus mode and calmer reference browsing
 - Track the high-priority rough edge where rotating into the working locale may not give clear enough visual confirmation that the working catalog is actually being rendered
 - Catalog promotion and base/working catalog design still need a follow-up product pass before being treated as settled
-- Track the known issue where suggestion requests can still send `reasoning` for model families that do not support it
 
 ## 0.2.17
 

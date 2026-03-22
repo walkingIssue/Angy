@@ -56,7 +56,7 @@ export type SuggestionProviderInput = {
 	sourceLocale: string;
 	targetLocale: string;
 	systemMessage: string;
-	model: string;
+	suggestionModel: SuggestionModelConfig;
 	apiKey: string | undefined;
 };
 
@@ -72,10 +72,35 @@ export type AngyConfigInput = {
 	routePath?: string;
 	apiKey?: string;
 	systemMessage?: string;
-	suggestionModel?: string;
+	suggestionModel?: SuggestionModelConfig;
 	watchIgnore?: string[];
 	suggestionProvider?: SuggestionProvider;
 };
+
+export type SuggestionModelConfig =
+	| { model: "gpt-4.1"; reasoning?: null }
+	| { model: "gpt-4.1-mini"; reasoning?: null }
+	| { model: "gpt-4.1-nano"; reasoning?: null }
+	| {
+			model: "gpt-5.4" | "gpt-5.4-mini" | "gpt-5.4-nano" | "gpt-5.2";
+			reasoning?: "none" | "low" | "medium" | "high" | "xhigh";
+	  }
+	| {
+			model: "gpt-5.1";
+			reasoning?: "none" | "low" | "medium" | "high";
+	  }
+	| {
+			model: "gpt-5";
+			reasoning?: "minimal" | "low" | "medium" | "high";
+	  }
+	| {
+			model: "gpt-5-pro";
+			reasoning?: "high";
+	  }
+	| {
+			model: "gpt-5.2-pro" | "gpt-5.4-pro";
+			reasoning?: "medium" | "high" | "xhigh";
+	  };
 
 export type AngyResolvedConfig = {
 	basePoPath: string;
@@ -85,7 +110,7 @@ export type AngyResolvedConfig = {
 	routePath: string;
 	apiKey: string;
 	systemMessage: string;
-	suggestionModel: string;
+	suggestionModel: SuggestionModelConfig;
 	watchIgnore: string[];
 	suggestionProvider?: SuggestionProvider;
 };

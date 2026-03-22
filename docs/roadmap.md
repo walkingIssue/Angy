@@ -11,23 +11,6 @@ It is intentionally lightweight and can hold:
 
 ## Current UX concerns
 
-### Capture heuristics for large interactive surfaces
-
-The current click-capture behavior is better, but still heuristic-driven.
-
-Current pain point:
-
-- if a button, card, or interactive container contains a lot of nested copy, Angy can capture the whole descendant text blob instead of the smallest actionable label
-
-This makes lookup worse because the helper is no longer resolving the intended UI string. It is resolving a composite chunk of text taken from the entire interactive surface.
-
-Desired direction:
-
-- prefer the smallest meaningful label first
-- bias toward `aria-label`, direct text, then first meaningful descendant text
-- keep avoiding full subtree `textContent` as the default fallback
-- keep tightening behavior on large composite clickable cards
-
 ## Known issues
 
 ### Working-locale rotation can be misleading
@@ -83,19 +66,6 @@ Desired direction:
 
 - keep draft restore obvious in the UI
 - keep staged vs draft vs committed state easy to read
-
-### Suggestion model reasoning mismatch
-
-The built-in suggestion request can still send a `reasoning` block even when the configured model family does not support reasoning controls.
-
-Current consequence:
-
-- suggestion requests can fail for non-reasoning models unless the config is adjusted manually
-
-Desired direction:
-
-- only send `reasoning` for models that actually support it
-- keep the default suggestion config aligned with the shipped default model
 
 ### Compact focus mode
 

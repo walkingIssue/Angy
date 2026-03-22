@@ -56,7 +56,8 @@ export default defineAngyConfig({
 	sourceLocale: "sv",
 	targetLocale: "en",
 	routePath: "/api/translations",
-	apiKey: ""
+	apiKey: "",
+	suggestionModel: { model: "gpt-4.1-mini" }
 });
 ```
 
@@ -100,9 +101,11 @@ export { handler as POST } from "@walkinissue/angy/server";
 | `routePath` | No | Defaults to `/api/translations` |
 | `apiKey` | No | Empty string disables built-in suggestions |
 | `systemMessage` | No | Custom suggestion prompt |
-| `suggestionModel` | No | Defaults to `gpt-4.1-mini` |
+| `suggestionModel` | No | Object config, defaults to `{ model: "gpt-4.1-mini" }` |
 | `watchIgnore` | No | Extra Vite watch ignore patterns |
 | `suggestionProvider` | No | Custom suggestion pipeline |
+
+Reasoning is validated per model. Non-reasoning models like `gpt-4.1-mini` do not accept it.
 
 ## Frequent issues
 
