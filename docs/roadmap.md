@@ -58,6 +58,25 @@ UI clarification needed:
 - working-only commits should continue to show the hammer-and-screwdriver state
 - status icons should never imply "safely in base" when the item only exists in working
 
+### Working-preview promotion can interrupt staged helper state
+
+Rotating into the working locale can promote the draft catalog and reload the page in dev.
+
+Current concern:
+
+- the helper closes during that reload
+- it is not clear enough whether staged-but-uncommitted translations survive that transition
+
+Why it matters:
+
+- users can lose confidence in whether staged work was preserved
+- even if committed work is safe, staged helper state needs clearer guarantees
+
+Desired direction:
+
+- make staged-state survival explicit
+- or block promotion while staged work is still pending
+
 ### User edit cache is missing
 
 The helper now keeps draft edits locally, but the UX can still be clearer.

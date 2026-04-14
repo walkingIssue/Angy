@@ -68,6 +68,11 @@
 		"vite": "^6.0.0 || ^7.0.0",
 		"wuchale": "^0.21.0"
 	},
+	"peerDependenciesMeta": {
+		"wuchale": {
+			"optional": true
+		}
+	},
 	"dependencies": {
 		"esbuild": "^0.25.0",
 		"fuse.js": "^7.1.0",

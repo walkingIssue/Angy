@@ -107,6 +107,77 @@ export { handler as POST } from "@walkinissue/angy/server";
 
 Reasoning is validated per model. Non-reasoning models like `gpt-4.1-mini` do not accept it.
 
+## Custom suggestion pipeline
+
+If you want to plug in your own LLM or translation backend, use `suggestionProvider`.
+
+```ts
+// translationPipeline.ts
+export async function translationPipeline({
+	context,
+	items,
+	sourceLocale,
+	targetLocale,
+	systemMessage,
+	suggestionModel
+}) {
+	const response = await fetch("https://api.anthropic.com/v1/messages", {
+		method: "POST",
+		headers: {
+			"content-type": "application/json",
+			"x-api-key": process.env.ANTHROPIC_API_KEY ?? "",
+			"anthropic-version": "2023-06-01"
+		},
+		body: JSON.stringify({
+			model: "claude-sonnet-4-20250514",
+			system: systemMessage,
+			max_tokens: 1200,
+			messages: [
+				{
+					role: "user",
+					content: JSON.stringify({
+						sourceLocale,
+						targetLocale,
+						suggestionModel,
+						context,
+						items
+					})
+				}
+			]
+		})
+	});
+
+	const data = await response.json();
+	const text = data?.content?.[0]?.text ?? "";
+	const parsed = JSON.parse(text);
+
+	return parsed.items;
+}
+```
+
+```ts
+// angy.config.ts
+import { defineAngyConfig } from "@walkinissue/angy/server";
+import { translationPipeline } from "./translationPipeline";
+
+export default defineAngyConfig({
+	...
+	basePoPath: "./src/locales/en.po",
+	workingPoPath: "./src/locales/en-working.po",
+	sourceLocale: "sv",
+	targetLocale: "en",
+	suggestionProvider: translationPipeline
+});
+```
+
+Your provider gets:
+
+- the resolved context and alternatives around the selected key
+- the untranslated items that need suggestions
+- the normalized `suggestionModel` object if you still want to route by model
+- user edits restore locally until commit or discard
+- suggestions are cached by `msgid`
+
 ## Frequent issues
 
 - Locale changes in Angy, but the page does not rerender

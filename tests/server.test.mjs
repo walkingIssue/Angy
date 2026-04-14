@@ -420,6 +420,56 @@ test("working preview promotion publishes draft into runtime working catalog", a
 	}
 });
 
+test("commit preserves base key order in the draft working catalog", async () => {
+	const fixture = await createCatalogFixture({
+		baseEntries: [
+			{ msgid: "Alpha", msgstr: "Alpha" },
+			{ msgid: "Beta", msgstr: "Beta" },
+			{ msgid: "Gamma", msgstr: "Gamma" }
+		],
+		workingEntries: [
+			{ msgid: "Alpha", msgstr: "Alpha" },
+			{ msgid: "Beta", msgstr: "Beta" },
+			{ msgid: "Gamma", msgstr: "Gamma" }
+		]
+	});
+
+	try {
+		const response = await requestWithJson(
+			"commit-batch",
+			{
+				items: [
+					{
+						resolvedMsgid: "Gamma",
+						resolvedMsgctxt: null,
+						translationValue: "Gamma updated"
+					},
+					{
+						resolvedMsgid: "Alpha",
+						resolvedMsgctxt: null,
+						translationValue: "Alpha updated"
+					}
+				]
+			},
+			fixture
+		);
+		assert.equal(response.status, 200);
+
+		const draftRaw = await readFile(fixture.workingPoPath.replace(".po", ".angy-draft.po"), "utf8");
+		const alphaIndex = draftRaw.indexOf('msgid "Alpha"');
+		const betaIndex = draftRaw.indexOf('msgid "Beta"');
+		const gammaIndex = draftRaw.indexOf('msgid "Gamma"');
+
+		assert.ok(alphaIndex >= 0);
+		assert.ok(betaIndex >= 0);
+		assert.ok(gammaIndex >= 0);
+		assert.ok(alphaIndex < betaIndex);
+		assert.ok(betaIndex < gammaIndex);
+	} finally {
+		await fixture.cleanup();
+	}
+});
+
 test("rotate-preflight returns affected keys for destructive rotation", async () => {
 	const fixture = await createCatalogFixture({
 		baseEntries: [{ msgid: "Submit", msgstr: "Submit" }],

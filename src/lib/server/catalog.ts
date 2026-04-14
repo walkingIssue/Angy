@@ -241,6 +241,46 @@ export async function ensureWorkingDraftCatalog() {
 	}
 }
 
+function clonePoTranslationEntry(entry: PoTranslationEntry): PoTranslationEntry {
+	return {
+		msgid: entry.msgid,
+		msgid_plural: entry.msgid_plural,
+		msgstr: Array.isArray(entry.msgstr) ? [...entry.msgstr] : [],
+		msgctxt: entry.msgctxt,
+		obsolete: entry.obsolete,
+		comments: entry.comments
+			? {
+					reference: entry.comments.reference,
+					extracted: entry.comments.extracted,
+					flag: entry.comments.flag,
+					previous: entry.comments.previous
+				}
+			: undefined
+	};
+}
+
+export function alignWorkingCatalogOrder(baseParsed: any, workingParsed: any) {
+	const baseTranslations = baseParsed?.translations ?? {};
+	const workingTranslations = workingParsed?.translations ?? {};
+	const orderedTranslations: Record<string, Record<string, PoTranslationEntry>> = {};
+
+	for (const [ctxKey, baseGroup] of Object.entries(baseTranslations)) {
+		const workingGroup = workingTranslations[ctxKey] ?? {};
+		const nextGroup: Record<string, PoTranslationEntry> = {};
+
+		for (const [msgid, baseEntry] of Object.entries(baseGroup as Record<string, PoTranslationEntry>)) {
+			const workingEntry =
+				(workingGroup as Record<string, PoTranslationEntry>)[msgid] ?? baseEntry;
+			nextGroup[msgid] = clonePoTranslationEntry(workingEntry);
+		}
+
+		orderedTranslations[ctxKey] = nextGroup;
+	}
+
+	workingParsed.translations = orderedTranslations;
+	return workingParsed;
+}
+
 export function removeFuzzyFlag(flagString?: string) {
 	if (!flagString) return "";
 

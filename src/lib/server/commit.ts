@@ -1,6 +1,7 @@
 import { json } from "@sveltejs/kit";
 import { basename } from "node:path";
 import {
+	alignWorkingCatalogOrder,
 	CatalogIntegrityError,
 	getRotationPreflight,
 	ensureWorkingCatalog,
@@ -56,6 +57,7 @@ export async function writeTranslationToWorkingCatalog(
 	entry.comments ??= {};
 	entry.comments.flag = removeFuzzyFlag(entry.comments.flag);
 
+	alignWorkingCatalogOrder(baseParsed, workingParsed);
 	await writeWorkingCatalog(workingParsed);
 
 	runtimeTranslations.set(runtimeKey(resolvedMsgid, resolvedMsgctxt), translationValue);
